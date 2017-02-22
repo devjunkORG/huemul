@@ -19,39 +19,15 @@ module.exports = (robot) ->
   hubotWebSite = "http://#{robot.name}.herokuapp.com/#{robot.name}"
 
   robot.hear /@?(\S*)(\b\+\+|--)(\s|$)/g, (response) ->
-    thisUser = response.message.user
     tokens = response.match
     return if not tokens
     return if not robot.adapter.client.rtm.dataStore.getChannelGroupOrDMById(response.envelope.room).is_channel
 
     for token in tokens
-      if (user = token.trim().replace(/\+\+|--/g,''))
-        userForToken(user, response)
-          .then (targetUser) ->
-            return if not targetUser
-            return response.send "Oe no po, el karma es pa otros no pa ti!" if thisUser.name is targetUser.name
-            op = response.match[2]
-            limit = canUpvote(thisUser, targetUser)
-            if Number.isFinite(limit)
-              response.send "¡No abuses! Intenta en " + limit + " minutos"
-              return
-            modifyingKarma = if op is "++" then 1 else -1
-            targetUser.karma += modifyingKarma
-            karmaLog = robot.brain.get('karmaLog') or []
-            karmaLog.push({
-              name: thisUser.name,
-              id: thisUser.id,
-              karma: modifyingKarma,
-              targetName: targetUser.name,
-              targetId: targetUser.id,
-              date: Date.now(),
-              msg: response.envelope.message.text
-            })
-            robot.brain.set 'karmaLog', karmaLog
-            robot.brain.save()
-            response.send "#{getCleanName(targetUser.name)} ahora tiene #{targetUser.karma} puntos de karma."
-        .catch (err) ->
-          console.log(err)
+      opRegex = /\+\+|--/g;
+      userToken = token.trim().replace(opRegex,'')
+      op = token.match(opRegex)[0]
+      applyKarma(userToken, op, response)
 
   robot.hear /^karma(?:\s+@?(.*))?$/, (response) ->
     targetToken = response.match[1]?.trim()
@@ -130,6 +106,35 @@ module.exports = (robot) ->
       msg = "No hay detalles sobre el karma de #{req.params.user}"
     res.setHeader 'content-type', 'text/html'
     res.end msg
+
+  applyKarma = (userToken, op, response) ->
+    thisUser = response.message.user
+    userForToken(userToken, response)
+      .then (targetUser) ->
+        return if not targetUser
+        return response.send "Oe no po, el karma es pa otros no pa ti!" if thisUser.name is targetUser.name
+        limit = canUpvote(thisUser, targetUser)
+        if Number.isFinite(limit)
+          response.send "¡No abuses! Intenta en " + limit + " minutos"
+          return
+        console.log(userToken, op)
+        modifyingKarma = if op is "++" then 1 else -1
+        targetUser.karma += modifyingKarma
+        karmaLog = robot.brain.get('karmaLog') or []
+        karmaLog.push({
+          name: thisUser.name,
+          id: thisUser.id,
+          karma: modifyingKarma,
+          targetName: targetUser.name,
+          targetId: targetUser.id,
+          date: Date.now(),
+          msg: response.envelope.message.text
+        })
+        robot.brain.set 'karmaLog', karmaLog
+        robot.brain.save()
+        response.send "#{getCleanName(targetUser.name)} ahora tiene #{targetUser.karma} puntos de karma."
+    .catch (err) ->
+      console.log(err)
 
   userForToken = (token, response) ->
     return usersForToken(token)
